@@ -1,0 +1,28 @@
+# Print Gateway agent - pokrece se NA LOKALNOJ MREZI RESTORANA (racunar ili
+# Raspberry Pi u istom LAN-u kao termalni printeri na portu 9100), NIKAD u
+# cloud-u. Odvojen fajl od root docker-compose.yml namjerno.
+#
+# Upotreba (na racunaru u restoranu):
+#   cp print-gateway/.env.example print-gateway/.env   # pa popuni RESTAURANT_ID, AGENT_TOKEN, IP printera
+#   docker compose -f docker-compose.print-gateway.yml up -d --build
+#
+# network_mode: host je namjeran - agent mora moci direktno gadjati
+# 192.168.x.x:9100 (fizicki printeri) bez Docker NAT-a. Radi samo na Linuxu;
+# na Windows/Mac hostu izostavi tu liniju i umjesto nje mapiraj/koristi
+# printer IP dostupan sa Docker Desktop mreze (najcesce host.docker.internal
+# nije opcija jer su printeri na fizickoj LAN mrezi, ne na hostu - u tom
+# slucaju je jednostavnije pokrenuti agenta golim `node src/index.js`
+# direktno na Windows-u, vidi print-gateway/README.md).
+services:
+  print-gateway:
+    build:
+      context: ./print-gateway
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ./print-gateway/.env
+    volumes:
+      - print_gateway_queue:/app/data
+
+volumes:
+  print_gateway_queue:

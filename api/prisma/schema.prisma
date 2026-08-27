@@ -1,0 +1,403 @@
+// Prisma implementacija DDL seme iz specifikacije (sekcija 4), plus staff_users
+// tabela potrebna za autentikaciju osoblja (nije bila u originalnom DDL-u jer
+// se specifikacija fokusirala na poslovne entitete, ali auth ne moze bez nje).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StaffRole {
+  ADMIN
+  MANAGER
+  WAITER
+  KITCHEN
+  BAR
+  // Platforma (mi, vlasnik SaaS-a) - NIJE vezan za jedan restoran (vidi
+  // StaffUser.restaurantId, opciono za ovu ulogu). Upravlja svim tenantima
+  // preko odvojenog /platform modula, nikad preko obicnih restaurant-scoped ruta.
+  SUPER_ADMIN
+}
+
+model Restaurant {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(255)
+  slug      String   @unique @db.VarChar(255)
+  address   String
+  latitude  Decimal? @db.Decimal(10, 8)
+  longitude Decimal? @db.Decimal(11, 8)
+  wifiSsid  String?  @map("wifi_ssid") @db.VarChar(100)
+  currency  String   @default("BAM") @db.VarChar(10)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // LAN adrese termalnih printera za Smart Routing (sekcija 3 specifikacije).
+  // Namjerno drzano na nivou restorana (ne posebna tabela) - jedan restoran u
+  // MVP-u ima najvise po jedan kuhinjski i jedan sank printer; ako pilot
+  // zatrazi vise (npr. dva sanka), ovo je prvo mjesto za izdvajanje u
+  // posebnu `printers` tabelu sa print_target->printer many-to-one vezom.
+  kitchenPrinterIp   String? @map("kitchen_printer_ip") @db.VarChar(45)
+  kitchenPrinterPort Int?    @map("kitchen_printer_port")
+  barPrinterIp       String? @map("bar_printer_ip") @db.VarChar(45)
+  barPrinterPort     Int?    @map("bar_printer_port")
+
+  // Anti-fraud (modul A.6) - oba OPCIONA, provjera se preskace ako nije
+  // podeseno (ne kvari postojece restorane). GPS koristi vec postojece
+  // latitude/longitude. `allowedIp` je namjerno prosta jednaka-vrijednost
+  // provjera (ne puni CIDR parser) - restoran unosi svoju javnu IP adresu;
+  // dovoljno za "je li ovaj zahtjev sa iste mreze kao restoran", ne pravi
+  // network security kontrolu.
+  geofenceRadiusMeters Int?    @map("geofence_radius_meters")
+  allowedIp            String? @map("allowed_ip") @db.VarChar(45)
+
+  // Konobar odobrava QR narudzbu prije slanja u kuhinju (modul C.3, opciono po restoranu).
+  requireOrderApproval Boolean @default(false) @map("require_order_approval")
+
+  // Kredencijali trecih servisa PO RESTORANU (ne globalna .env varijabla) -
+  // svaki restoran unosi svoje kroz admin "Postavke" ekran, jer je ovo
+  // multi-tenant sistem i svaki vlasnik ima svoj Twilio/Stripe nalog.
+  // NAPOMENA: cuvano kao plain text u MVP obimu (isto kao ostatak sistema -
+  // JWT_SECRET i sl. su takodjer neenkriptovani u .env) - u pravoj produkciji
+  // enkriptovati at-rest ili koristiti secret manager (Vault, AWS Secrets Manager).
+  twilioAccountSid  String? @map("twilio_account_sid")
+  twilioAuthToken   String? @map("twilio_auth_token")
+  twilioFromNumber  String? @map("twilio_from_number") // SMS: +387..., WhatsApp: whatsapp:+387...
+  stripeSecretKey   String? @map("stripe_secret_key")
+  // Svaki restoran konfigurise SVOJ webhook endpoint u Stripe dashboardu
+  // (POST /api/payments/webhook/{restaurant_id}) i dobija SVOJ secret za taj
+  // endpoint - nema jedan zajednicki webhook secret jer svaki restoran ima
+  // odvojen Stripe nalog (ne Stripe Connect).
+  stripeWebhookSecret String? @map("stripe_webhook_secret")
+
+  // Pretplata restorana NA PLATFORMU (nas prihod) preko Lemon Squeezy - za
+  // razliku od Twilio/Stripe iznad, ovo NIJE po restoranu konfigurisano jer
+  // MI naplacujemo NJIMA (jedna nasa prodavnica/store), pa su LS kredencijali
+  // globalni env (vidi billing/billing.service.ts), a ovdje se cuva samo
+  // STANJE pretplate tog restorana.
+  subscriptionStatus         String    @default("trialing") @map("subscription_status") // trialing | active | past_due | cancelled
+  trialEndsAt                DateTime? @map("trial_ends_at")
+  subscriptionRenewsAt       DateTime? @map("subscription_renews_at")
+  lemonSqueezyCustomerId     String?   @map("lemonsqueezy_customer_id")
+  lemonSqueezySubscriptionId String?   @map("lemonsqueezy_subscription_id")
+
+  tables       RestaurantTable[]
+  categories   MenuCategory[]
+  orders       Order[]
+  reservations Reservation[]
+  staffUsers   StaffUser[]
+  shopOrders   ShopOrder[]
+
+  @@map("restaurants")
+}
+
+/// Webshop (dodano naknadno) - platforma prodaje fizicki hardver (termalni
+/// printeri i sl.) restoranima. Namjerno ODVOJENO od Order/OrderItem modela
+/// iznad (to je HRANA koju gost narucuje kod restorana preko QR koda) -
+/// ovdje je platforma prodavac, restoran/vlasnik je kupac. Placanje ide preko
+/// Lemon Squeezy (isti obrazac kao pretplata - vidi billing/), ne Stripe-a
+/// (koji je restoranov, za NJEGOVE goste).
+model ShopProduct {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(255)
+  slug        String   @unique @db.VarChar(255)
+  description String?
+  priceCents  Int      @map("price_cents")
+  currency    String   @default("BAM") @db.VarChar(10)
+  imageUrl    String?  @map("image_url")
+  sku         String?  @unique @db.VarChar(100)
+  stockQty    Int      @default(0) @map("stock_qty")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  orderItems ShopOrderItem[]
+
+  @@map("shop_products")
+}
+
+model ShopOrder {
+  id                  String    @id @default(uuid())
+  // Opciono - poznato ako je kupac bio prijavljen kao restoranov ADMIN u
+  // trenutku kupovine, ali kupovina ne zahtijeva prijavu (javna forma).
+  restaurantId        String?   @map("restaurant_id")
+  customerName        String    @map("customer_name") @db.VarChar(255)
+  customerEmail       String    @map("customer_email") @db.VarChar(255)
+  customerPhone       String?   @map("customer_phone") @db.VarChar(50)
+  shippingAddress     String    @map("shipping_address")
+  totalCents          Int       @map("total_cents")
+  currency            String    @default("BAM") @db.VarChar(10)
+  status              String    @default("pending") // pending -> paid -> shipped -> delivered / cancelled
+  // 'cod' (pouzece - kurir naplacuje gotovinu pri dostavi, TRENUTNO JEDINI
+  // ponudjeni nacin u /shop) ili 'card' (Lemon Squeezy online checkout - kod
+  // je vec spreman za kad se poveze prava prodavnica, samo nije izlozeno u UI-ju).
+  paymentMethod       String    @default("cod") @map("payment_method")
+  lemonSqueezyOrderId String?   @map("lemonsqueezy_order_id")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  restaurant Restaurant?     @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  items      ShopOrderItem[]
+
+  @@index([restaurantId])
+  @@map("shop_orders")
+}
+
+/// Snapshot naziva/cijene u trenutku kupovine (ne referenca uzivo) - da
+/// stara narudzba ostane tacna cak i ako se proizvod kasnije preimenuje ili
+/// mu se promijeni cijena.
+model ShopOrderItem {
+  id             String @id @default(uuid())
+  shopOrderId    String @map("shop_order_id")
+  productId      String @map("product_id")
+  productName    String @map("product_name") @db.VarChar(255)
+  unitPriceCents Int    @map("unit_price_cents")
+  quantity       Int
+
+  shopOrder ShopOrder   @relation(fields: [shopOrderId], references: [id], onDelete: Cascade)
+  product   ShopProduct @relation(fields: [productId], references: [id])
+
+  @@index([shopOrderId])
+  @@map("shop_order_items")
+}
+
+model RestaurantTable {
+  id           String   @id @default(uuid())
+  restaurantId String   @map("restaurant_id")
+  tableNumber  String   @map("table_number") @db.VarChar(50)
+  zoneName     String   @default("Glavna Sala") @map("zone_name") @db.VarChar(100)
+  capacity     Int      @default(4)
+  posX         Int      @default(0) @map("pos_x")
+  posY         Int      @default(0) @map("pos_y")
+  qrCodeToken  String   @unique @map("qr_code_token") @db.VarChar(255)
+  status       String   @default("free") @db.VarChar(50) // free, occupied, reserved, bill_requested
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  orders       Order[]
+  reservations Reservation[]
+
+  @@index([restaurantId])
+  @@map("restaurant_tables")
+}
+
+model MenuCategory {
+  id             String    @id @default(uuid())
+  restaurantId   String    @map("restaurant_id")
+  nameJson       Json      @map("name_json") // {"bs": "...", "en": "..."}
+  sortOrder      Int       @default(0) @map("sort_order")
+  activeFromTime DateTime? @map("active_from_time") @db.Time()
+  activeToTime   DateTime? @map("active_to_time") @db.Time()
+  isActive       Boolean   @default(true) @map("is_active")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  items      MenuItem[]
+
+  @@index([restaurantId])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id              String   @id @default(uuid())
+  categoryId      String   @map("category_id")
+  nameJson        Json     @map("name_json")
+  descriptionJson Json?    @map("description_json")
+  price           Decimal  @db.Decimal(10, 2)
+  imageUrl        String?  @map("image_url")
+  isAvailable     Boolean  @default(true) @map("is_available") // za "86-ing"
+  allergens       String[] @default([])
+  printTarget     String   @default("kitchen") @map("print_target") // 'kitchen' | 'bar'
+  sortOrder       Int      @default(0) @map("sort_order") // redoslijed prevlacenjem (drag-and-drop) u admin meniju
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  category   MenuCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  modifiers  ItemModifier[]
+  orderItems OrderItem[]
+
+  @@index([categoryId])
+  @@map("menu_items")
+}
+
+model ItemModifier {
+  id         String  @id @default(uuid())
+  menuItemId String  @map("menu_item_id")
+  nameJson   Json    @map("name_json")
+  price      Decimal @default(0.00) @db.Decimal(10, 2)
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@map("item_modifiers")
+}
+
+model Order {
+  id            String   @id @default(uuid())
+  restaurantId  String   @map("restaurant_id")
+  tableId       String?  @map("table_id")
+  orderNumber   Int      @default(autoincrement()) @map("order_number")
+  orderType     String   @default("dine_in") @map("order_type") // 'dine_in' | 'takeaway'
+  status        String   @default("pending") // pending, preparing, ready, served, cancelled
+  totalAmount   Decimal  @map("total_amount") @db.Decimal(10, 2)
+  paymentMethod String   @default("cash") @map("payment_method")
+  paymentStatus String   @default("unpaid") @map("payment_status")
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  // Takeaway/Pickup (specifikacija, modul D.3) - gost nema sto/guest_id iz
+  // QR sesije, pa treba kontakt i tacno vrijeme preuzimanja. Null za dine_in.
+  pickupTime    DateTime? @map("pickup_time")
+  customerName  String?  @map("customer_name")
+  customerPhone String?  @map("customer_phone")
+  // Nije bilo u originalnom DDL-u - koristi se kao aproksimacija "vrijeme
+  // zavrsetka" za prosjecno vrijeme pripreme (analitika, modul E.3). Tacnije
+  // bi bila posebna tabela historije statusa, ali za MVP obim ovo je dovoljno
+  // dobro jer narudzba u praksi rijetko mijenja status vise puta nakon 'ready'.
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table      RestaurantTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  items      OrderItem[]
+
+  @@index([restaurantId])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                String   @id @default(uuid())
+  orderId           String   @map("order_id")
+  menuItemId        String?  @map("menu_item_id")
+  quantity          Int      @default(1)
+  unitPrice         Decimal  @map("unit_price") @db.Decimal(10, 2)
+  itemNotes         String?  @map("item_notes")
+  selectedModifiers Json?    @map("selected_modifiers")
+  createdAt         DateTime @default(now()) @map("created_at")
+  /// Anonimni guest_id gosta koji je dodao stavku u korpu (isti kao
+  /// CartItem.added_by prije narucivanja) - null za rucni unos konobara.
+  /// Koristi se za "split by item" (specifikacija, modul A.5).
+  addedBy           String?  @map("added_by")
+
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  @@map("order_items")
+}
+
+model Reservation {
+  id              String   @id @default(uuid())
+  restaurantId    String   @map("restaurant_id")
+  tableId         String?  @map("table_id")
+  customerName    String   @map("customer_name") @db.VarChar(255)
+  customerPhone   String   @map("customer_phone") @db.VarChar(50)
+  customerEmail   String?  @map("customer_email") @db.VarChar(255)
+  reservationTime DateTime @map("reservation_time")
+  guestCount      Int      @map("guest_count")
+  status          String   @default("confirmed") // confirmed, cancelled, completed, no_show
+  specialRequests String?  @map("special_requests")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // SMS/WhatsApp podsjetnici (modul D.1) - kad je poslat podsjetnik "2h prije",
+  // da scheduler ne salje isti podsjetnik vise puta. Null = jos nije poslat.
+  reminderSentAt DateTime? @map("reminder_sent_at")
+  confirmationSentAt DateTime? @map("confirmation_sent_at")
+
+  restaurant Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table      RestaurantTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, reservationTime])
+  @@map("reservations")
+}
+
+/// Nije dio originalnog DDL-a iz specifikacije - dodano jer Admin/Konobarski/
+/// Kuhinjski moduli (opisani u sekcijama 2.C i 2.E) zahtijevaju prijavu osoblja.
+model StaffUser {
+  id           String    @id @default(uuid())
+  // Opciono - SAMO SUPER_ADMIN (platforma) nema restoran. Svi ostali (ADMIN,
+  // MANAGER, WAITER, KITCHEN, BAR) MORAJU imati restaurantId - to se ne
+  // provjerava na nivou baze (Prisma/Postgres to ne mogu izraziti kao
+  // "obavezno osim za jednu vrijednost enuma"), nego u RegisterService/
+  // StaffUsersService kod kreiranja.
+  restaurantId String?   @map("restaurant_id")
+  email        String    @unique @db.VarChar(255)
+  passwordHash String    @map("password_hash")
+  fullName     String    @map("full_name") @db.VarChar(255)
+  role         StaffRole @default(WAITER)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  // Email verifikacija (dodano naknadno) - NE blokira login/koristenje (trial
+  // i dalje radi neverifikovan, isti pristup kao vecina SaaS platformi), samo
+  // se prikazuje kao "molimo potvrdite email" banner dok se ne potvrdi. Cilj
+  // je sprijeciti registraciju na tudji email (spam/impersonation), ne
+  // blokirati korisnika.
+  emailVerifiedAt DateTime? @map("email_verified_at")
+
+  // TOTP 2FA (dodano naknadno) - totpSecret se upisuje pri /auth/2fa/setup ali
+  // totpEnabled ostaje false dok korisnik ne potvrdi prvi kod (vidi
+  // AuthService.enableTwoFactor) - sprecava da neko slucajno zakljuca sebe van
+  // naloga prije nego sto stvarno doda tajnu u svoju authenticator app.
+  totpSecret  String? @map("totp_secret")
+  totpEnabled Boolean @default(false) @map("totp_enabled")
+
+  // Zastita od brute-force pogadjanja lozinke (pored rate-limitinga na rutu) -
+  // vidi AuthService.login. Resetuje se na uspjesan login.
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+
+  // SetNull (ne Cascade) - brisanje restorana ne smije obrisati super-admina;
+  // za obicne restaurant-scoped naloge ovo se u praksi nikad ne desava jer se
+  // restorani ne brisu (samo suspenduju preko is_active), ali je SetNull
+  // sigurnije podrazumijevano ponasanje za opcionu vezu.
+  restaurant             Restaurant?              @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  passwordResetTokens    PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+
+  @@index([restaurantId])
+  @@map("staff_users")
+}
+
+/// Email verifikacija naloga (dodano naknadno) - isti oblik kao PasswordResetToken, odvojena tabela radi jasnoce (razlicita svrha/istek).
+model EmailVerificationToken {
+  id          String    @id @default(uuid())
+  staffUserId String    @map("staff_user_id")
+  token       String    @unique
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("email_verification_tokens")
+}
+
+/// Audit log SUPER_ADMIN akcija (platform-admin.service.ts) - namjerno BEZ FK
+/// na restoran (plain string id) da zapis prezivi i ako bi restoran ikad bio
+/// obrisan (ovaj sistem ih inace samo suspenduje, ne brise).
+model PlatformAuditLog {
+  id                 String   @id @default(uuid())
+  actorId            String   @map("actor_id")
+  actorEmail         String   @map("actor_email") @db.VarChar(255)
+  action             String   @db.VarChar(100)
+  targetRestaurantId String?  @map("target_restaurant_id")
+  targetRestaurantName String? @map("target_restaurant_name") @db.VarChar(255)
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}
+
+/// "Zaboravljena lozinka" tok za osoblje (modul dodan naknadno). Token se salje mejlom (vidi EmailService), jednokratan, kratkotrajan.
+model PasswordResetToken {
+  id          String    @id @default(uuid())
+  staffUserId String    @map("staff_user_id")
+  token       String    @unique
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("password_reset_tokens")
+}

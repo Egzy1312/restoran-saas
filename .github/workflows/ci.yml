@@ -1,0 +1,119 @@
+name: CI
+
+# NAPOMENA: ovaj repo trenutno nije git repozitorij (nema .git foldera), pa
+# ovaj workflow ne radi nista dok se ne pokrene `git init`, ne doda remote
+# i ne pusha na GitHub - vidi root README.md sekciju "CI/CD". Fajl je
+# ovdje spreman da proradi cim se to uradi.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restoran_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: ./api
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/restoran_test?schema=public
+      JWT_SECRET: ci-test-secret
+      PRINT_AGENT_SHARED_SECRET: ci-test-secret
+      INTERNAL_SERVICE_SECRET: ci-test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test -- --ci
+
+  websocket-gateway:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./websocket-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: websocket-gateway/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  print-gateway:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./print-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: print-gateway/package-lock.json
+      - run: npm ci
+      - run: node --check src/index.js
+
+  frontends:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [pwa, kds, waiter, admin]
+    defaults:
+      run:
+        working-directory: ./${{ matrix.app }}
+    env:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3010/api
+      NEXT_PUBLIC_WS_URL: http://localhost:3011
+      NEXT_PUBLIC_GUEST_PWA_URL: http://localhost:3002
+      NEXT_PUBLIC_ADMIN_URL: http://localhost:3005
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [api, websocket-gateway, frontends]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build all cloud service images (bez pushanja)
+        run: |
+          docker build -t restoran-api ./api
+          docker build -t restoran-ws ./websocket-gateway
+          docker build -t restoran-pwa --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:3010/api --build-arg NEXT_PUBLIC_WS_URL=http://localhost:3011 ./pwa
+          docker build -t restoran-kds --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:3010/api --build-arg NEXT_PUBLIC_WS_URL=http://localhost:3011 --build-arg NEXT_PUBLIC_ADMIN_URL=http://localhost:3005 ./kds
+          docker build -t restoran-waiter --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:3010/api --build-arg NEXT_PUBLIC_WS_URL=http://localhost:3011 --build-arg NEXT_PUBLIC_ADMIN_URL=http://localhost:3005 ./waiter
+          docker build -t restoran-admin --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:3010/api --build-arg NEXT_PUBLIC_GUEST_PWA_URL=http://localhost:3002 ./admin

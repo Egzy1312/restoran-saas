@@ -1,0 +1,157 @@
+# Orkestracija cloud dijela platforme: Postgres, Redis, API, WebSocket
+# Gateway i 4 Next.js frontenda (PWA/KDS/konobar/admin).
+#
+# NAMJERNO ISKLJUCEN: print-gateway. Taj agent MORA raditi na lokalnoj mrezi
+# restorana (isti LAN kao termalni printeri na portu 9100) - vidi
+# docker-compose.print-gateway.yml i print-gateway/README.md.
+#
+# Upotreba:
+#   cp .env.example .env   # pa popuni tajne (JWT_SECRET, lozinke, ...)
+#   docker compose up -d --build
+#   docker compose exec api npx prisma migrate deploy
+#   docker compose exec api npx ts-node prisma/seed.ts   # opciono, demo podaci
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-restoran}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-restoran}?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      REFRESH_EXPIRES_IN: ${REFRESH_EXPIRES_IN:-30d}
+      PRINT_AGENT_SHARED_SECRET: ${PRINT_AGENT_SHARED_SECRET}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      PWA_BASE_URL: ${PWA_BASE_URL}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # Mora odgovarati javnom URL-u NA KOME GOSTI/OSOBLJE STVARNO PRISTUPAJU
+      # ovom API-ju (koristi se za apsolutne linkove ka otpremljenim slikama,
+      # vidi uploads/uploads.service.ts) - lokalno ostaje default, u produkciji
+      # promijeniti u .env na stvarni javni URL (npr. https://api.domain.com).
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:3010}
+    ports:
+      - '3010:3000'
+    volumes:
+      # Otpremljene slike (meni artikli, webshop proizvodi) - bez ovog
+      # volumena, restart kontejnera bi obrisao sve otpremljene slike
+      # (uploads/ zivi unutar kontejnera, ne na hostu, bez ovoga).
+      - api_uploads:/app/uploads
+
+  websocket-gateway:
+    build:
+      context: ./websocket-gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      PORT: 3001
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-restoran}?schema=public
+      API_BASE_URL: http://api:3000/api
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      TABLE_SESSION_TTL_SECONDS: ${TABLE_SESSION_TTL_SECONDS:-14400}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    ports:
+      - '3011:3001'
+
+  pwa:
+    build:
+      context: ./pwa
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - websocket-gateway
+    ports:
+      - '3002:3000'
+
+  kds:
+    build:
+      context: ./kds
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
+        NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - websocket-gateway
+    ports:
+      - '3003:3000'
+
+  waiter:
+    build:
+      context: ./waiter
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
+        NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - websocket-gateway
+    ports:
+      - '3004:3000'
+
+  admin:
+    build:
+      context: ./admin
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_GUEST_PWA_URL: ${NEXT_PUBLIC_GUEST_PWA_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '3005:3000'
+
+volumes:
+  postgres_data:
+  redis_data:
+  api_uploads:
