@@ -487,3 +487,68 @@ učitavanja; novi artikal dobija ispravan `sortOrder` na kraju kategorije.
 redoslijed/tenant-izolacija u novom `MenuService` paketu testova, potvrđeno
 bug-injekcijom da test stvarno hvata regresiju). `waiter`/`kds`/`admin` grade
 se čisto (4/4, 4/4, 24/24 stranica) i tipovi prolaze bez grešaka.
+
+## Produkcija na cPanel-u bez Node.js App Manager-a (peti naknadni prolaz)
+
+Platforma je pušena u produkciju na `restaurant.ba` (VPS sa cPanel-om, korisnik
+`restaurantba2`), ali hosting NEMA "Setup Node.js App" (Passenger) niti Docker
+- pa je deploy arhitektura drugačija od `docker-compose.yml` puta (taj i dalje
+radi za bilo koga sa Docker-om/VPS-om). Zapisano ovdje da se cijeli proces može
+ponoviti (npr. na drugom serveru) bez ponovnog otkrivanja istih prepreka.
+
+- **Struktura domena** - poddomeni umjesto putanja (jednostavnije, bez rewrite
+  pravila po putanji): `restaurant.ba` → admin (landing+login+dashboard+shop),
+  `api.restaurant.ba` → API, `ws.restaurant.ba` → websocket-gateway,
+  `meni.restaurant.ba` → gost PWA, `kds.restaurant.ba` → KDS,
+  `konobar.restaurant.ba` → konobar. Kreirano preko `uapi SubDomain
+  addsubdomain` (cPanel-ova komandno-linijska alatka, dostupna običnom
+  cPanel korisniku preko SSH-a - ne treba root/WHM za ovo).
+- **Node procesi preko PM2** (`ecosystem.config.js`, root repoa) - instaliran
+  bez roota (`npm install -g pm2` u `$HOME/.npm` prefiks). Next.js app-ovi
+  (`admin`/`pwa`/`kds`/`waiter`) imaju `output: 'standalone'` u
+  `next.config.js` (iz Docker-a) - `next start` NE radi ispravno sa
+  standalone-om (upozorenje pri pokretanju, veći memory footprint), pa PM2
+  pokreće `.next/standalone/server.js` direktno. Svaki app-ov `package.json`
+  ima `postbuild` skriptu koja kopira `.next/static` i `public/` u
+  `.next/standalone/` (Next.js ovo NE radi automatski van Docker-a). Bez
+  root-a nema `pm2 startup` (traži systemd) - preživljavanje restarta servera
+  riješeno preko `crontab -e`: `@reboot sleep 30 && pm2 resurrect`.
+- **Apache reverse proxy preko `.htaccess`** (`mod_proxy`/`mod_proxy_http`/
+  `mod_proxy_wstunnel` - provjeriti da postoje na hostingu, mnogi cPanel
+  serveri ih imaju uključene). Svaki poddomen ima u svom `public_html/<sub>/`
+  folderu `.htaccess` sa `RewriteRule ^(.*)$ http://127.0.0.1:<port>/$1 [P,L]`
+  (WebSocket upgrade requesti idu preko `ws://` sheme, prepoznato preko
+  `%{HTTP:Upgrade}`). **Otkrivena zamka**: cPanel-ov `DirectoryIndex`
+  automatski pokušava `index.php` za zahtjev na `/` PRIJE nego što
+  `RewriteRule` uopšte stigne da se izvrši (Next.js je onda dobijao zahtjev za
+  `/index.php` umjesto `/`, vraćao 404) - riješeno sa `DirectoryIndex
+  disabled` na vrhu svakog `.htaccess`. Iznad proxy pravila dodano i
+  `RewriteCond %{HTTPS} off` → `R=301` na `https://` (osim `/.well-known/`,
+  potrebno za AutoSSL HTTP-01 verifikaciju).
+- **SSL** - `uapi SSL start_autossl_check` (Let's Encrypt, DV, automatski za
+  sve poddomene odjednom) - ne treba root, dostupno cPanel korisniku.
+- **PostgreSQL** - kreirano preko cPanel "PostgreSQL Database Wizard" (UI, ne
+  postoji `uapi Postgres` modul na ovom serveru - nedostaje Perl paket na
+  strani hostinga). Direktan `psql` pristup zahtijeva da je korisnik/baza
+  kreirana KROZ cPanel (ne radi ručni `CREATE USER` - `pg_hba.conf` je
+  ograničen na cPanel-om upravljane naloge).
+- **Redis preko Upstash-a (managed, TLS)** - server nema lokalni Redis niti
+  root da ga instalira. Upstash free plan (256MB, dovoljno za efemerne
+  korpe stolova - vidi `table-session.service.ts`) zahtijeva TLS, što je
+  tražilo STVARNU izmjenu koda: `REDIS_TLS=true` env varijabla dodana u
+  `redis.module.ts` i `adapters/redis-io.adapter.ts` (ioredis `tls: {}`
+  opcija), podrazumijevano isključeno (lokalni Docker Redis ne koristi TLS).
+  Provjereno uživo: prava `websocket` transport konekcija (ne polling
+  fallback) kroz `mod_proxy_wstunnel` do `wss://ws.restaurant.ba`.
+- **GitHub deploy preko dva odvojena SSH deploy key-a** (ne lični nalog/PAT) -
+  jedan sa "Allow write access" (za push sa razvojne mašine), jedan bez
+  (samo za `git pull` na serveru, manji rizik ako bi server bio kompromitovan).
+- **`deploy.sh`** (root repoa) - redeploy u jednoj komandi za buduće izmjene:
+  `git pull` → `npm install`+`build` za sve servise → `prisma migrate deploy`
+  → `pm2 reload` (graceful, bez prekida). Pokrenuti NA SERVERU iz
+  `~/apps/restoran`.
+
+Provjereno uživo nakon punog deploy-a: SUPER_ADMIN prijava preko
+`https://api.restaurant.ba`, CORS između poddomena, sve 4 frontend stranice
+(200 preko HTTPS-a), stvarna WebSocket konekcija, HTTP→HTTPS redirect na svih
+6 domena.
