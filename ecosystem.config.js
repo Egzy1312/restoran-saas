@@ -15,32 +15,33 @@ module.exports = {
       script: 'dist/main.js',
       env: { NODE_ENV: 'production' },
     },
+    // Next.js apps koriste 'output: standalone' (next.config.js) - minimalan
+    // node_modules footprint, bitno na serveru sa malo RAM-a. 'next start' NE
+    // radi ispravno sa standalone-om (upozorenje pri pokretanju) - mora ici
+    // direktno preko generisanog server.js. Statika/public se kopira u njega
+    // preko "postbuild" skripte u package.json (mora se pokrenuti nakon svakog builda).
     {
       name: 'restoran-admin',
       cwd: __dirname + '/admin',
-      script: 'node_modules/.bin/next',
-      args: 'start',
+      script: '.next/standalone/server.js',
       env: { NODE_ENV: 'production', PORT: '3005' },
     },
     {
       name: 'restoran-pwa',
       cwd: __dirname + '/pwa',
-      script: 'node_modules/.bin/next',
-      args: 'start',
+      script: '.next/standalone/server.js',
       env: { NODE_ENV: 'production', PORT: '3002' },
     },
     {
       name: 'restoran-kds',
       cwd: __dirname + '/kds',
-      script: 'node_modules/.bin/next',
-      args: 'start',
+      script: '.next/standalone/server.js',
       env: { NODE_ENV: 'production', PORT: '3003' },
     },
     {
       name: 'restoran-waiter',
       cwd: __dirname + '/waiter',
-      script: 'node_modules/.bin/next',
-      args: 'start',
+      script: '.next/standalone/server.js',
       env: { NODE_ENV: 'production', PORT: '3004' },
     },
   ],
