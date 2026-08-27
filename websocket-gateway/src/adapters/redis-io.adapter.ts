@@ -21,6 +21,7 @@ export class RedisIoAdapter extends IoAdapter {
     private readonly redisHost: string,
     private readonly redisPort: number,
     private readonly redisPassword?: string,
+    private readonly redisTls?: boolean,
   ) {
     super(app);
   }
@@ -30,6 +31,8 @@ export class RedisIoAdapter extends IoAdapter {
       host: this.redisHost,
       port: this.redisPort,
       password: this.redisPassword || undefined,
+      // Upstash i vecina managed Redis servisa zahtijevaju TLS (self-hosted/Docker Redis ne).
+      tls: this.redisTls ? {} : undefined,
     });
     const subClient = pubClient.duplicate();
 

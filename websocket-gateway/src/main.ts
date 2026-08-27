@@ -14,6 +14,7 @@ async function bootstrap() {
     config.get<string>('REDIS_HOST', '127.0.0.1'),
     config.get<number>('REDIS_PORT', 6379),
     config.get<string>('REDIS_PASSWORD'),
+    config.get<string>('REDIS_TLS') === 'true',
   );
   await redisAdapter.connectToRedis();
   app.useWebSocketAdapter(redisAdapter);

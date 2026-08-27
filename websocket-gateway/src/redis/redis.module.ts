@@ -20,6 +20,8 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
           host: config.get<string>('REDIS_HOST', '127.0.0.1'),
           port: config.get<number>('REDIS_PORT', 6379),
           password: config.get<string>('REDIS_PASSWORD') || undefined,
+          // Upstash i vecina managed Redis servisa zahtijevaju TLS (self-hosted/Docker Redis ne) - ukljuci preko REDIS_TLS=true u .env, ne mijenjati kod po okruzenju.
+          tls: config.get<string>('REDIS_TLS') === 'true' ? {} : undefined,
           maxRetriesPerRequest: 3,
         });
       },
