@@ -5,13 +5,8 @@ export const metadata = { title: 'Uslovi korištenja — Restaurant.ba' };
 export default function TermsPage() {
   return (
     <main className="max-w-2xl mx-auto p-6 sm:p-10 flex flex-col gap-4 text-foreground leading-relaxed">
-      <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-        <strong>Napomena:</strong> ovo je generički predložak, ne pravno provjeren dokument. Prije stvarnog
-        lansiranja, zamijenite naziv firme/jurisdikciju ispod i dajte ga na pregled pravniku.
-      </p>
-
       <h1 className="text-2xl font-bold text-foreground">Uslovi korištenja</h1>
-      <p className="text-sm text-muted-foreground">Posljednje ažurirano: 04.09.2026.</p>
+      <p className="text-sm text-muted-foreground">Posljednje ažurirano: 17.09.2026.</p>
 
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-1">1. Prihvatanje uslova</h2>

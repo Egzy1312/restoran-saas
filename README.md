@@ -552,3 +552,30 @@ Provjereno uživo nakon punog deploy-a: SUPER_ADMIN prijava preko
 `https://api.restaurant.ba`, CORS između poddomena, sve 4 frontend stranice
 (200 preko HTTPS-a), stvarna WebSocket konekcija, HTTP→HTTPS redirect na svih
 6 domena.
+
+### Dnevni backup baze (`scripts/backup-db.sh`)
+
+`pg_dump` + gzip u `~/backups/db/` na serveru, čuva zadnjih 14 dana (stariji se
+brišu). Pokreće se preko cron-a - **cron raspored NIJE u git-u** (nije "kod",
+posebno je po serveru), postavlja se jednom preko SSH:
+
+```
+crontab -e
+# dodati:
+0 3 * * * cd ~/apps/restoran && bash scripts/backup-db.sh >> ~/backups/db/backup.log 2>&1
+```
+
+Zahtijeva `~/.pgpass` fajl (format `host:port:baza:user:lozinka`, `chmod 600`)
+da `pg_dump` ne traži lozinku interaktivno.
+
+**Napomena**: ovo štiti od slučajnog brisanja/loše migracije, NE od potpunog
+gubitka servera (backup je LOKALNO na istom serveru) - za pravu zaštitu treba
+i offsite kopija (npr. periodično preuzeti `~/backups/db/` na drugo mjesto,
+ili `rclone` na cloud storage), nije podešeno.
+
+### Sentry (praćenje grešaka)
+
+Kod postoji SAMO u `api/` (`src/main.ts` + `src/common/filters/sentry-exceptions.filter.ts`)
+- hvata neuhvaćene i 5xx greške, ne normalne 4xx. Bez `SENTRY_DSN` u `.env`,
+potpun no-op (nema greške, samo se ne inicijalizuje). Frontend app-ovi
+(admin/pwa/kds/waiter) NEMAJU Sentry ožičen - samo backend.
