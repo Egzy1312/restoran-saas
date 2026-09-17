@@ -14,6 +14,29 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import PublicHeader from '@/components/public-header';
 
+const FAQ = [
+  {
+    q: 'Treba li mi poseban hardver da počnem?',
+    a: 'Ne. Gosti naručuju sa svog telefona skeniranjem QR koda, a vi upravljate svime sa običnog telefona, tableta ili računara. Termalni printeri za kuhinju/šank su opcioni dodatak, ne uslov za rad.',
+  },
+  {
+    q: 'Da li ovo zamjenjuje fiskalnu kasu?',
+    a: 'Ne. Platforma upravlja narudžbama, stolovima i rezervacijama — fiskalizacija računa ostaje odvojena zakonska obaveza i radi se preko vaše postojeće fiskalne kase.',
+  },
+  {
+    q: 'Koliko traje podešavanje?',
+    a: 'Obično ispod 10 minuta za osnovno pokretanje: unesete meni, dodate stolove i odštampate QR kodove. Rezervacije, konobarski nalozi i analitika se podešavaju usput, kad vam zatrebaju.',
+  },
+  {
+    q: 'Mogu li otkazati kad god želim?',
+    a: 'Da, jednim klikom u postavkama naloga, bez otkaznog roka i bez poziva podršci.',
+  },
+  {
+    q: 'Šta ako imam više osoblja sa različitim ulogama?',
+    a: 'Dodajete neograničen broj naloga (konobar, kuhinja, šank, menadžer) sa pristupom prilagođenim njihovoj ulozi, uz dvofaktorsku autentikaciju za administratore.',
+  },
+];
+
 const FEATURES = [
   {
     icon: QrCode,
@@ -118,55 +141,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Hardver */}
-        <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-          <div className="grid items-center gap-10 lg:grid-cols-2">
-            <div>
-              <span className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
-                <Printer className="h-4 w-4" /> Hardver
-              </span>
-              <h2 className="text-3xl font-bold tracking-tight">Termalni printeri, spremni za rad iz kutije</h2>
-              <p className="mt-3 text-muted-foreground">
-                Prodajemo LAN termalne printere unaprijed testirane sa Print Gateway agentom — samo ih priključite
-                na mrežu restorana i unesite IP u Postavkama. ESC/POS kompatibilni, sa CP852 kodnom stranicom za
-                č/ć/š/ž/đ, dostupni u 58mm i 80mm širini.
-              </p>
-              <ul className="mt-5 flex flex-col gap-2 text-sm">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-success" /> Direktna integracija sa Smart Routing (kuhinja/šank)
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-success" /> Ethernet (LAN) priključak, bez dodatnih drajvera
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-success" /> Dostava na adresu restorana
-                </li>
-              </ul>
-              <Button size="lg" className="mt-6" asChild>
-                <Link href="/shop">
-                  Pogledaj prodavnicu <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Card>
-                <CardContent className="p-6 text-center">
-                  <Printer className="mx-auto h-10 w-10 text-primary" />
-                  <p className="mt-3 font-semibold">58mm printer</p>
-                  <p className="text-sm text-muted-foreground">Za šank i manje stanice</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-6 text-center">
-                  <Printer className="mx-auto h-12 w-12 text-primary" />
-                  <p className="mt-3 font-semibold">80mm printer</p>
-                  <p className="text-sm text-muted-foreground">Za kuhinju, duže liste artikala</p>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </section>
-
         {/* How it works */}
         <section className="mx-auto max-w-5xl px-4 py-20 sm:px-6">
           <div className="mx-auto mb-12 max-w-2xl text-center">
@@ -218,11 +192,94 @@ export default function LandingPage() {
             </CardContent>
           </Card>
         </section>
+
+        {/* Hardver - dodatna prodaja, prikazana nakon sto posjetilac vec razumije core ponudu i cijenu */}
+        <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+          <div className="grid items-center gap-10 lg:grid-cols-2">
+            <div>
+              <span className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
+                <Printer className="h-4 w-4" /> Hardver
+              </span>
+              <h2 className="text-3xl font-bold tracking-tight">Termalni printeri, spremni za rad iz kutije</h2>
+              <p className="mt-3 text-muted-foreground">
+                Prodajemo LAN termalne printere unaprijed testirane sa Print Gateway agentom — samo ih priključite
+                na mrežu restorana i unesite IP u Postavkama. ESC/POS kompatibilni, sa CP852 kodnom stranicom za
+                č/ć/š/ž/đ, dostupni u 58mm i 80mm širini.
+              </p>
+              <ul className="mt-5 flex flex-col gap-2 text-sm">
+                <li className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-success" /> Direktna integracija sa Smart Routing (kuhinja/šank)
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-success" /> Ethernet (LAN) priključak, bez dodatnih drajvera
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-success" /> Dostava na adresu restorana
+                </li>
+              </ul>
+              <Button size="lg" className="mt-6" asChild>
+                <Link href="/shop">
+                  Pogledaj prodavnicu <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <Printer className="mx-auto h-10 w-10 text-primary" />
+                  <p className="mt-3 font-semibold">58mm printer</p>
+                  <p className="text-sm text-muted-foreground">Za šank i manje stanice</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <Printer className="mx-auto h-12 w-12 text-primary" />
+                  <p className="mt-3 font-semibold">80mm printer</p>
+                  <p className="text-sm text-muted-foreground">Za kuhinju, duže liste artikala</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section id="faq" className="border-t bg-secondary/30 py-20">
+          <div className="mx-auto max-w-3xl px-4 sm:px-6">
+            <div className="mx-auto mb-12 max-w-2xl text-center">
+              <h2 className="text-3xl font-bold tracking-tight">Često postavljana pitanja</h2>
+            </div>
+            <div className="flex flex-col gap-4">
+              {FAQ.map((item) => (
+                <Card key={item.q}>
+                  <CardContent className="p-5">
+                    <h3 className="font-semibold">{item.q}</h3>
+                    <p className="mt-1.5 text-sm text-muted-foreground">{item.a}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Zavrsni poziv na akciju */}
+        <section className="bg-primary py-16 text-primary-foreground">
+          <div className="mx-auto max-w-2xl px-4 text-center sm:px-6">
+            <h2 className="text-3xl font-bold tracking-tight">Spremni da ubrzate posluživanje?</h2>
+            <p className="mt-3 text-primary-foreground/90">
+              Pridružite se restoranima koji su prešli na digitalno naručivanje. 14 dana besplatno, bez kartice.
+            </p>
+            <Button size="lg" variant="secondary" className="mt-7" asChild>
+              <Link href="/register">
+                Registruj svoj restoran <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </section>
       </main>
 
       <footer className="border-t bg-card py-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 text-sm text-muted-foreground sm:flex-row sm:px-6">
-          <span>© {new Date().getFullYear()} Restoran SaaS Platforma</span>
+          <span>© {new Date().getFullYear()} Restaurant.ba</span>
           <div className="flex gap-4">
             <Link href="/terms" className="hover:text-foreground">
               Uslovi korištenja

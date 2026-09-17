@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-export const metadata = { title: 'Politika privatnosti — Restoran SaaS' };
+export const metadata = { title: 'Politika privatnosti — Restaurant.ba' };
 
 export default function PrivacyPage() {
   return (
@@ -11,7 +11,7 @@ export default function PrivacyPage() {
       </p>
 
       <h1 className="text-2xl font-bold text-foreground">Politika privatnosti</h1>
-      <p className="text-sm text-muted-foreground">Posljednje ažurirano: [datum]</p>
+      <p className="text-sm text-muted-foreground">Posljednje ažurirano: 04.09.2026.</p>
 
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-1">1. Koje podatke prikupljamo</h2>
@@ -48,14 +48,14 @@ export default function PrivacyPage() {
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-1">5. Vaša prava</h2>
         <p>
-          Možete zatražiti brisanje svog naloga i povezanih podataka kontaktiranjem [email za podršku].
+          Možete zatražiti brisanje svog naloga i povezanih podataka kontaktiranjem <a href="mailto:podrska@restaurant.ba" className="text-primary hover:underline">podrska@restaurant.ba</a>.
           Suspenzija/brisanje restorana ne utiče na podatke drugih restorana na Platformi.
         </p>
       </section>
 
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-1">6. Kontakt</h2>
-        <p>Pitanja u vezi privatnosti: [email za podršku].</p>
+        <p>Pitanja u vezi privatnosti: <a href="mailto:podrska@restaurant.ba" className="text-primary hover:underline">podrska@restaurant.ba</a>.</p>
       </section>
 
       <Link href="/register" className="text-primary font-medium mt-4">← Nazad na registraciju</Link>

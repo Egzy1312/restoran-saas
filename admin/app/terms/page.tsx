@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-export const metadata = { title: 'Uslovi korištenja — Restoran SaaS' };
+export const metadata = { title: 'Uslovi korištenja — Restaurant.ba' };
 
 export default function TermsPage() {
   return (
@@ -11,12 +11,12 @@ export default function TermsPage() {
       </p>
 
       <h1 className="text-2xl font-bold text-foreground">Uslovi korištenja</h1>
-      <p className="text-sm text-muted-foreground">Posljednje ažurirano: [datum]</p>
+      <p className="text-sm text-muted-foreground">Posljednje ažurirano: 04.09.2026.</p>
 
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-1">1. Prihvatanje uslova</h2>
         <p>
-          Registracijom i korištenjem platforme [Naziv Firme] ("Platforma") prihvatate ove Uslove korištenja.
+          Registracijom i korištenjem platforme Restaurant.ba ("Platforma") prihvatate ove Uslove korištenja.
           Ako se ne slažete, nemojte koristiti Platformu.
         </p>
       </section>
@@ -66,14 +66,14 @@ export default function TermsPage() {
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-1">7. Ograničenje odgovornosti</h2>
         <p>
-          Platforma se pruža "kakva jeste", bez garancija. [Naziv Firme] ne odgovara za indirektnu štetu
+          Platforma se pruža "kakva jeste", bez garancija. Restaurant.ba ne odgovara za indirektnu štetu
           proisteklu iz korištenja ili nemogućnosti korištenja usluge.
         </p>
       </section>
 
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-1">8. Kontakt</h2>
-        <p>Pitanja u vezi ovih uslova: [email za podršku].</p>
+        <p>Pitanja u vezi ovih uslova: <a href="mailto:podrska@restaurant.ba" className="text-primary hover:underline">podrska@restaurant.ba</a>.</p>
       </section>
 
       <Link href="/register" className="text-primary font-medium mt-4">← Nazad na registraciju</Link>

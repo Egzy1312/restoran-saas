@@ -10,7 +10,7 @@ export default function PublicHeader() {
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <ChefHat className="h-5 w-5" />
           </div>
-          <span className="text-lg font-bold">Restoran</span>
+          <span className="text-lg font-bold">Restaurant.ba</span>
         </Link>
         <nav className="hidden items-center gap-6 text-sm font-medium sm:flex">
           <Link href="/#features" className="text-muted-foreground hover:text-foreground">
@@ -18,6 +18,9 @@ export default function PublicHeader() {
           </Link>
           <Link href="/#pricing" className="text-muted-foreground hover:text-foreground">
             Cijene
+          </Link>
+          <Link href="/#faq" className="text-muted-foreground hover:text-foreground">
+            Pitanja
           </Link>
           <Link href="/shop" className="text-muted-foreground hover:text-foreground">
             Prodavnica

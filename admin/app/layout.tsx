@@ -6,7 +6,7 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin', 'latin-ext'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'Admin Panel — Restoran',
+  title: 'Admin Panel — Restaurant.ba',
   description: 'Menadžer menija, tlocrt stolova, analitika.',
 };
 

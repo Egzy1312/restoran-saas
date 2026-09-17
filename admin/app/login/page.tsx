@@ -125,7 +125,7 @@ export default function LoginPage() {
         <CardHeader className="items-center text-center">
           <Logo />
           <CardTitle>Prijava — Admin</CardTitle>
-          <CardDescription>Restoran SaaS Platforma</CardDescription>
+          <CardDescription>Restaurant.ba</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
