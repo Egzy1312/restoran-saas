@@ -259,6 +259,17 @@ export class StaffGateway {
       status: 'free',
     });
     this.server.to(`table:${dto.table_id}`).emit('cart_updated', { items: [], total: 0 });
+
+    // Neposluzene narudzbe za ovaj sto su automatski razrijesene na API strani
+    // (vidi TablesService.resolveLingeringOrders) - obavijesti osoblje da ih
+    // uklone sa ekrana, isti event koji vec slusaju za rucne promjene statusa.
+    for (const order of result.data?.resolvedOrders ?? []) {
+      this.server.to(this.staffRoom(data.staffRestaurantId!)).emit('order_status_changed', {
+        order_id: order.id,
+        new_status: order.status,
+        changed_at: new Date().toISOString(),
+      });
+    }
   }
 
   private assertStaffSession(client: Socket, data: StaffSocketData): boolean {

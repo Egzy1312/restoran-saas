@@ -32,7 +32,19 @@ export class TablesService {
 
   async update(restaurantId: string, tableId: string, dto: UpdateTableDto) {
     await this.assertOwnership(restaurantId, tableId);
-    return this.prisma.restaurantTable.update({
+
+    // Konobar zatvara sto (naplaceno/pospremljeno) - bez ovoga bi eventualne
+    // neposluzene narudzbe za taj sto ostale zaglavljene u pending/preparing/
+    // ready zauvijek (sto vec izgleda "slobodno" za nove goste, ali KDS i
+    // konobar i dalje vide staru narudzbu kao aktivnu). Vracamo (id, novi
+    // status) parove da pozivalac (websocket-gateway) moze i uzivo ukloniti
+    // ih sa ekrana osoblja, ne samo u bazi.
+    let resolvedOrders: { id: string; status: string }[] = [];
+    if (dto.status === 'free') {
+      resolvedOrders = await this.resolveLingeringOrders(tableId);
+    }
+
+    const table = await this.prisma.restaurantTable.update({
       where: { id: tableId },
       data: {
         tableNumber: dto.table_number,
@@ -43,6 +55,33 @@ export class TablesService {
         status: dto.status,
       },
     });
+
+    return { ...table, resolvedOrders };
+  }
+
+  /**
+   * Narudzbe koje nikad nisu odobrene (pending_approval) su bespredmetne kad
+   * se sto zatvara - otkazujemo ih. Narudzbe koje SU vec potvrdjene/u kuhinji
+   * (pending/preparing/ready) pretpostavljamo da su fizicki poslužene do
+   * trenutka kad konobar zatvara sto (naplata implicira da je gost dobio
+   * hranu) - oznacavamo ih posluzenim umjesto da ostanu zauvijek "aktivne".
+   */
+  private async resolveLingeringOrders(tableId: string): Promise<{ id: string; status: string }[]> {
+    const lingering = await this.prisma.order.findMany({
+      where: { tableId, status: { in: ['pending_approval', 'pending', 'preparing', 'ready'] } },
+      select: { id: true, status: true },
+    });
+    if (lingering.length === 0) return [];
+
+    const cancelledIds = lingering.filter((o) => o.status === 'pending_approval').map((o) => o.id);
+    const servedIds = lingering.filter((o) => o.status !== 'pending_approval').map((o) => o.id);
+
+    await this.prisma.$transaction([
+      ...(cancelledIds.length ? [this.prisma.order.updateMany({ where: { id: { in: cancelledIds } }, data: { status: 'cancelled' } })] : []),
+      ...(servedIds.length ? [this.prisma.order.updateMany({ where: { id: { in: servedIds } }, data: { status: 'served' } })] : []),
+    ]);
+
+    return lingering.map((o) => ({ id: o.id, status: cancelledIds.includes(o.id) ? 'cancelled' : 'served' }));
   }
 
   async remove(restaurantId: string, tableId: string) {

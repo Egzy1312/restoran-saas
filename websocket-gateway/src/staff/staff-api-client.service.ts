@@ -44,8 +44,17 @@ export class StaffApiClient {
     return this.patch(token, `/menu/items/${menuItemId}`, { is_available: isAvailable });
   }
 
-  /** Konobar zatvara sto (naplaćeno/pospremljeno) - vraća status na 'free'. */
-  async updateTableStatus(token: string, tableId: string, status: string): Promise<ApiResult<{ id: string; status: string }>> {
+  /**
+   * Konobar zatvara sto (naplaćeno/pospremljeno) - vraća status na 'free'.
+   * `resolvedOrders` - narudžbe koje su bile neposlužene za taj sto i API ih
+   * je automatski razriješio (vidi TablesService.resolveLingeringOrders) -
+   * pozivalac ovo koristi da uživo ukloni te tikete sa KDS/konobarskih ekrana.
+   */
+  async updateTableStatus(
+    token: string,
+    tableId: string,
+    status: string,
+  ): Promise<ApiResult<{ id: string; status: string; resolvedOrders: { id: string; status: string }[] }>> {
     return this.patch(token, `/tables/${tableId}`, { status });
   }
 
