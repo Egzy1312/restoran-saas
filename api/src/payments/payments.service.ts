@@ -81,8 +81,22 @@ export class PaymentsService {
     }
   }
 
-  /** Poziva se kad webhook javi da je placanje uspjesno - oznacava narudzbu placenom. */
-  async markOrderPaid(orderId: string) {
+  /**
+   * Poziva se kad webhook javi da je placanje uspjesno - oznacava narudzbu
+   * placenom. Provjerava da narudzba STVARNO pripada restoranu ciji webhook
+   * je stigao (secret za potpis je po restoranu, ali sam Stripe event moze
+   * imati proizvoljan `metadata.order_id` - npr. restoran X moze rucno
+   * poslati test webhook iz svog Stripe dashboarda sa pogodjenim/tudjim
+   * order_id-jem). Bez ove provjere, restoran X bi mogao oznaciti TUDJU
+   * narudzbu kao placenu koristeci SVOJ, potpuno legitiman, Stripe webhook.
+   */
+  async markOrderPaid(restaurantId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, restaurantId } });
+    if (!order) {
+      this.logger.warn(`Stripe webhook restorana ${restaurantId} pokusao oznaciti narudzbu ${orderId} koja mu ne pripada - ignorisano.`);
+      return;
+    }
+
     await this.prisma.order.update({ where: { id: orderId }, data: { paymentStatus: 'paid' } });
     this.logger.log(`Narudžba ${orderId} označena kao plaćena (Stripe webhook).`);
   }

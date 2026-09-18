@@ -37,7 +37,7 @@ export class PaymentsController {
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as { metadata?: { order_id?: string } };
       const orderId = session.metadata?.order_id;
-      if (orderId) await this.paymentsService.markOrderPaid(orderId);
+      if (orderId) await this.paymentsService.markOrderPaid(restaurantId, orderId);
     }
 
     return { received: true };
