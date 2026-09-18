@@ -77,19 +77,29 @@ export default function MenuClient({ slug, tableToken }: { slug: string; tableTo
   // 2) Konekcija na WebSocket Gateway i pridruzivanje sesiji stola
   useEffect(() => {
     if (!table) return;
+    const currentTable = table; // narrowed non-null - zatvorenje ispod inace gubi tu garanciju
 
     const socket = getSocket();
     let cancelled = false;
 
-    getGeoLocation().then((position) => {
+    async function join() {
+      const position = await getGeoLocation();
       if (cancelled) return;
       socket.emit('join_table_session', {
-        table_id: table.table_id,
-        qr_token: table.qr_token,
+        table_id: currentTable.table_id,
+        qr_token: currentTable.qr_token,
         guest_id: guestId,
         ...(position ?? {}),
       });
-    });
+    }
+
+    join();
+    // Ponovo se pridruzuje sesiji pri SVAKOM reconnect-u (npr. server
+    // restartovan tokom deploy-a) - bez ovoga korpa prestaje da se azurira
+    // uzivo dok gost rucno ne osvjezi stranicu (socket.io sam rekonektuje
+    // transport, ali server ne zna da je gost "u" ovoj sesiji stola dok mu
+    // opet ne posaljemo join_table_session).
+    socket.on('connect', join);
 
     const onCartUpdated = (payload: CartState) => setCart(payload);
     const onJoinError = (payload: { message: string }) => toast.error(payload.message);
@@ -133,6 +143,7 @@ export default function MenuClient({ slug, tableToken }: { slug: string; tableTo
 
     return () => {
       cancelled = true;
+      socket.off('connect', join);
       socket.off('cart_updated', onCartUpdated);
       socket.off('join_table_session_error', onJoinError);
       socket.off('place_order_error', onPlaceOrderError);

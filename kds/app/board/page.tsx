@@ -63,10 +63,21 @@ export default function BoardPage() {
   useEffect(() => {
     if (!token) return;
 
-    fetchActiveOrders(token).then(setOrders);
-
     const socket = getSocket();
-    socket.emit('join_staff_session', { token });
+
+    // Salje se pri PRVOJ konekciji i pri SVAKOM ponovnom povezivanju (npr.
+    // server restartovan tokom deploy-a) - socket.io transport se sam
+    // rekonektuje, ali server ne zna da je ovaj klijent "osoblje" dok mu
+    // opet ne posaljemo join_staff_session. Bez ovoga, tab ostaje "tiho"
+    // (prima transport konekciju ali ne i broadcast evente) dok se rucno ne
+    // osvjezi. fetchActiveOrders ovdje takodjer hvata sve sto je propusteno
+    // dok je bio diskonektovan.
+    const onConnect = () => {
+      socket.emit('join_staff_session', { token });
+      fetchActiveOrders(token).then(setOrders);
+    };
+    if (socket.connected) onConnect();
+    socket.on('connect', onConnect);
 
     const onJoinError = () => {
       clearSession();
@@ -103,6 +114,7 @@ export default function BoardPage() {
     socket.on('call_waiter', onCallWaiter);
 
     return () => {
+      socket.off('connect', onConnect);
       socket.off('join_staff_session_error', onJoinError);
       socket.off('new_order_received', onNewOrder);
       socket.off('order_status_changed', onStatusChanged);

@@ -73,11 +73,20 @@ export default function FloorPage() {
   useEffect(() => {
     if (!token) return;
 
-    fetchTables(token).then(setTables);
-    fetchActiveOrders(token).then(setOrders);
-
     const socket = getSocket();
-    socket.emit('join_staff_session', { token });
+
+    // Salje se pri PRVOJ konekciji i pri SVAKOM ponovnom povezivanju (npr.
+    // server restartovan tokom deploy-a) - bez ovoga tab ostaje "tiho" nakon
+    // restarta websocket-gateway-a dok se rucno ne osvjezi (socket.io sam
+    // rekonektuje transport, ali server ne zna da je ovaj klijent "osoblje"
+    // dok mu opet ne posaljemo join_staff_session).
+    const onConnect = () => {
+      socket.emit('join_staff_session', { token });
+      fetchTables(token).then(setTables);
+      fetchActiveOrders(token).then(setOrders);
+    };
+    if (socket.connected) onConnect();
+    socket.on('connect', onConnect);
 
     const onJoinError = () => {
       clearSession();
@@ -118,6 +127,7 @@ export default function FloorPage() {
     socket.on('call_waiter', onCallWaiter);
 
     return () => {
+      socket.off('connect', onConnect);
       socket.off('join_staff_session_error', onJoinError);
       socket.off('table_status_changed', onTableStatusChanged);
       socket.off('new_order_received', onNewOrderOrStatusChanged);
