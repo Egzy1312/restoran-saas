@@ -334,9 +334,15 @@ export class AuthService {
       throw new UnauthorizedException('Nevažeći token.');
     }
 
-    const user = await this.prisma.staffUser.findUnique({ where: { id: payload.sub } });
+    const user = await this.prisma.staffUser.findUnique({ where: { id: payload.sub }, include: { restaurant: true } });
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Nalog više ne postoji ili je deaktiviran.');
+    }
+    // Bez ovoga bi suspendovan restoran mogao beskonacno obnavljati tokene
+    // (refresh token traje 30 dana i sam sebe rotira) i nikad stvarno ne bi
+    // bio odsjecen - vidi isti fix u JwtStrategy.validate().
+    if (user.restaurant && !user.restaurant.isActive) {
+      throw new UnauthorizedException('Restoran je suspendovan. Kontaktirajte podršku.');
     }
 
     return this.issueTokens(user);

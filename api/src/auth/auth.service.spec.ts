@@ -225,6 +225,21 @@ describe('AuthService', () => {
 
       await expect(service.refresh({ refresh_token: 'neki-refresh-token' })).rejects.toThrow(UnauthorizedException);
     });
+
+    it('baca UnauthorizedException ako je restoran suspendovan (bez ovoga bi suspendovan restoran mogao beskonacno obnavljati tokene)', async () => {
+      jwt.verifyAsync.mockResolvedValue({ sub: baseUser.id, type: 'refresh' });
+      prisma.staffUser.findUnique.mockResolvedValue({ ...baseUser, restaurant: { id: baseUser.restaurantId, isActive: false } });
+
+      await expect(service.refresh({ refresh_token: 'neki-refresh-token' })).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('dozvoljava refresh kad je restoran aktivan', async () => {
+      jwt.verifyAsync.mockResolvedValue({ sub: baseUser.id, type: 'refresh' });
+      prisma.staffUser.findUnique.mockResolvedValue({ ...baseUser, restaurant: { id: baseUser.restaurantId, isActive: true } });
+
+      const result = await service.refresh({ refresh_token: 'neki-refresh-token' });
+      expect(result.access_token).toContain('signed:');
+    });
   });
 
   describe('register - self-service registracija tenanta', () => {
