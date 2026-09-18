@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import { RestaurantTable } from '@/types/table';
 import { Order } from '@/types/order';
 import { getSocket } from '@/lib/socket';
@@ -46,12 +46,17 @@ export default function TableDetail({
   onClose: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
-  const hasActiveOrders = orders.some((o) => o.status === 'pending' || o.status === 'preparing');
+  const hasActiveOrders = orders.some((o) => o.status === 'pending' || o.status === 'preparing' || o.status === 'ready');
 
   function closeTable() {
     if (hasActiveOrders && !confirm('Sto ima neposluženih narudžbi. Ipak zatvoriti sto?')) return;
     getSocket().emit('close_table', { table_id: table.id });
     onClose();
+  }
+
+  /** Konobar potvrdjuje da je hranu/pice fizicki odnio do stola - kuhinja se zaustavlja na "Spremno", ne zna kad je stvarno posluzeno. */
+  function markServed(orderId: string) {
+    getSocket().emit('update_order_status', { order_id: orderId, status: 'served' });
   }
 
   return (
@@ -81,6 +86,11 @@ export default function TableDetail({
                     </li>
                   ))}
                 </ul>
+                {order.status === 'ready' && (
+                  <Button size="sm" className="mt-2 w-full" onClick={() => markServed(order.id)}>
+                    <Check className="h-4 w-4" /> Označi posluženim
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}

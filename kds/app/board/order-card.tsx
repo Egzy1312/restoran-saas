@@ -11,13 +11,19 @@ function localizedName(json: Record<string, string> | null | undefined): string 
   return json.bs ?? json.en ?? Object.values(json).find(Boolean) ?? 'Artikal';
 }
 
-const NEXT_STATUS: Record<Order['status'], { label: string; next: Order['status'] } | null> = {
-  pending: { label: 'Počni pripremu', next: 'preparing' },
-  preparing: { label: 'Spremno', next: 'ready' },
-  ready: { label: 'Poslužen', next: 'served' },
-  served: null,
-  cancelled: null,
-};
+/**
+ * Sto-narudzbe (dine_in) namjerno STAJU na "ready" ovdje - kuhinja ne nosi
+ * hranu do stola pa ne zna kad je stvarno posluzeno, to potvrdjuje konobar
+ * (vidi waiter/app/floor/page.tsx markServed). Preuzimanje (takeaway) nema
+ * konobara izmedju - kuhinja/salter direktno predaje gostu, pa tu "Preuzeto"
+ * ostaje ovdje.
+ */
+function getAction(order: Order): { label: string; next: Order['status'] } | null {
+  if (order.status === 'pending') return { label: 'Počni pripremu', next: 'preparing' };
+  if (order.status === 'preparing') return { label: 'Spremno', next: 'ready' };
+  if (order.status === 'ready' && order.orderType === 'takeaway') return { label: 'Preuzeto', next: 'served' };
+  return null;
+}
 
 /** Boja kartice po vremenu cekanja - Zeleno < 5min, Zuto 5-15min, Crveno > 15min (specifikacija, modul B.1). */
 function waitBucket(createdAt: string, now: number): 'green' | 'yellow' | 'red' {
@@ -50,7 +56,7 @@ export default function OrderCard({
   const visibleItems = station ? order.items.filter((i) => (i.menuItem?.printTarget ?? 'kitchen') === station) : order.items;
   if (visibleItems.length === 0) return null;
 
-  const action = NEXT_STATUS[order.status];
+  const action = getAction(order);
 
   return (
     <Card className={cn('border-2', BUCKET_STYLES[bucket])}>
@@ -103,6 +109,9 @@ export default function OrderCard({
           <Button size="lg" className="text-base" onClick={() => onAdvanceStatus(order.id, action.next)}>
             {action.label}
           </Button>
+        )}
+        {!action && order.status === 'ready' && (
+          <p className="text-center text-sm font-medium text-success">Spremno — čeka konobara</p>
         )}
       </CardContent>
     </Card>

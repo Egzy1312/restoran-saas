@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Bell, Check, X, ClipboardList } from 'lucide-react';
+import { LogOut, Bell, Check, X, ClipboardList, UtensilsCrossed } from 'lucide-react';
 import { clearSession, getStaffUser, getToken } from '@/lib/auth';
 import { fetchActiveOrders, fetchTables } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
@@ -10,10 +10,23 @@ import { RestaurantTable } from '@/types/table';
 import { Order } from '@/types/order';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import TableTile, { ComputedStatus } from './table-tile';
 import TableDetail from './table-detail';
 
 const CALL_ALERT_TTL_MS = 3 * 60 * 1000; // 3 min - konobar je vjerovatno vec reagovao nakon toga
+
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: 'Primljeno',
+  preparing: 'U pripremi',
+  ready: 'Spremno za posluživanje',
+};
+
+const ORDER_STATUS_VARIANT: Record<string, 'secondary' | 'warning' | 'success'> = {
+  pending: 'secondary',
+  preparing: 'warning',
+  ready: 'success',
+};
 
 function computeStatus(table: RestaurantTable, orders: Order[]): ComputedStatus {
   if (table.status === 'bill_requested') return 'bill_requested';
@@ -136,7 +149,14 @@ export default function FloorPage() {
   const zones = Array.from(new Set(tables.map((t) => t.zoneName))).sort();
   const selectedTable = tables.find((t) => t.id === selectedTableId) ?? null;
   const selectedOrders = selectedTable ? orders.filter((o) => o.tableId === selectedTable.id) : [];
-  const pendingApproval = orders.filter((o) => o.status === 'pending_approval');
+  // .tableId filter iskljucuje takeaway narudzbe (nemaju sto, ne tice se konobara) - imaju tableId: null.
+  const pendingApproval = orders.filter((o) => o.status === 'pending_approval' && o.tableId);
+  // Narudzbe koje su vec u kuhinji/sanku (ne cekaju odobrenje) - konobar inace
+  // ovo vidi samo kroz promjenu boje stola, sto se lako previdi (npr. narudzba
+  // samo za pice) - eksplicitna lista ovdje je brza provjera bez klikanja na svaki sto.
+  const awaitingService = orders
+    .filter((o) => (o.status === 'pending' || o.status === 'preparing' || o.status === 'ready') && o.tableId)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   function approveOrder(orderId: string) {
     getSocket().emit('approve_order', { order_id: orderId });
@@ -144,6 +164,10 @@ export default function FloorPage() {
   function rejectOrder(orderId: string) {
     if (!confirm('Odbiti ovu narudžbu? Neće ići u kuhinju.')) return;
     getSocket().emit('reject_order', { order_id: orderId });
+  }
+  /** Konobar potvrdjuje da je hranu/pice fizicki odnio do stola - kuhinja se zaustavlja na "Spremno", ne zna kad je stvarno posluzeno. */
+  function markServed(orderId: string) {
+    getSocket().emit('update_order_status', { order_id: orderId, status: 'served' });
   }
 
   return (
@@ -198,6 +222,51 @@ export default function FloorPage() {
                         <Check className="h-4 w-4" /> Odobri
                       </Button>
                     </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {awaitingService.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2">
+            <span className="rounded-full bg-secondary px-2.5 py-1 text-sm font-semibold text-secondary-foreground">
+              <UtensilsCrossed className="mr-1 inline h-3.5 w-3.5" /> Narudžbe u toku ({awaitingService.length})
+            </span>
+          </h2>
+          <div className="flex flex-col gap-2">
+            {awaitingService.map((order) => {
+              const table = tables.find((t) => t.id === order.tableId);
+              return (
+                <Card key={order.id} className="cursor-pointer" onClick={() => table && openTable(table.id)}>
+                  <CardContent className="flex items-center justify-between gap-3 p-3">
+                    <div>
+                      <p className="font-semibold">
+                        Sto {table?.tableNumber ?? '—'} <span className="text-sm font-normal text-muted-foreground">· #{order.orderNumber}</span>
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {order.items.map((i) => `${i.quantity}× ${i.menuItem?.nameJson.bs ?? i.menuItem?.nameJson.en ?? ''}`).join(', ')}
+                      </p>
+                    </div>
+                    {order.status === 'ready' ? (
+                      <Button
+                        size="sm"
+                        className="shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markServed(order.id);
+                        }}
+                      >
+                        <Check className="h-4 w-4" /> Poslužen
+                      </Button>
+                    ) : (
+                      <Badge variant={ORDER_STATUS_VARIANT[order.status]} className="shrink-0">
+                        {ORDER_STATUS_LABEL[order.status]}
+                      </Badge>
+                    )}
                   </CardContent>
                 </Card>
               );
