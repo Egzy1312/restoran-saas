@@ -10,8 +10,59 @@ describe('MenuService', () => {
       menuCategory: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
       menuItem: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
       itemModifier: { create: jest.fn(), findUnique: jest.fn(), delete: jest.fn() },
+      restaurant: { findUnique: jest.fn() },
     };
     service = new MenuService(prisma);
+  });
+
+  describe('getPublicMenu - vremenski prozor kategorije koristi bosansko (Europe/Sarajevo) vrijeme, ne server TZ', () => {
+    afterEach(() => jest.useRealTimers());
+
+    it('kategorija 11:00-15:00 je VIDLJIVA u 09:30 UTC (=11:30 u Sarajevu ljeti, UTC+2) - server je u UTC pa bi naivna provjera ovo pogresno sakrila', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-07-15T09:30:00.000Z'));
+      prisma.restaurant.findUnique.mockResolvedValue({ id: 'rest-1', isActive: true, slug: 'konoba', name: 'Konoba', currency: 'BAM' });
+      prisma.menuCategory.findMany.mockResolvedValue([
+        {
+          id: 'cat-rucak',
+          activeFromTime: new Date(Date.UTC(1970, 0, 1, 11, 0)),
+          activeToTime: new Date(Date.UTC(1970, 0, 1, 15, 0)),
+          items: [],
+        },
+      ]);
+
+      const result = await service.getPublicMenu('konoba');
+
+      expect(result.categories.map((c: any) => c.id)).toEqual(['cat-rucak']);
+    });
+
+    it('ista kategorija (11:00-15:00 lokalno) NIJE vidljiva u 08:30 UTC (=10:30 u Sarajevu, prije otvaranja)', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-07-15T08:30:00.000Z'));
+      prisma.restaurant.findUnique.mockResolvedValue({ id: 'rest-1', isActive: true, slug: 'konoba', name: 'Konoba', currency: 'BAM' });
+      prisma.menuCategory.findMany.mockResolvedValue([
+        {
+          id: 'cat-rucak',
+          activeFromTime: new Date(Date.UTC(1970, 0, 1, 11, 0)),
+          activeToTime: new Date(Date.UTC(1970, 0, 1, 15, 0)),
+          items: [],
+        },
+      ]);
+
+      const result = await service.getPublicMenu('konoba');
+
+      expect(result.categories).toEqual([]);
+    });
+
+    it('kategorija bez definisanog vremena je uvijek vidljiva', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-01T03:00:00.000Z'));
+      prisma.restaurant.findUnique.mockResolvedValue({ id: 'rest-1', isActive: true, slug: 'konoba', name: 'Konoba', currency: 'BAM' });
+      prisma.menuCategory.findMany.mockResolvedValue([
+        { id: 'cat-uvijek', activeFromTime: null, activeToTime: null, items: [] },
+      ]);
+
+      const result = await service.getPublicMenu('konoba');
+
+      expect(result.categories.map((c: any) => c.id)).toEqual(['cat-uvijek']);
+    });
   });
 
   describe('createItem - redoslijed (sort_order)', () => {

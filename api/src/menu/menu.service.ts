@@ -37,13 +37,21 @@ export class MenuService {
       },
     });
 
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    // Server radi u UTC (provjereno u produkciji), restorani su u Bosni
+    // (UTC+1/+2 zavisno od ljetnog racunanja vremena) - .getHours() bi ovdje
+    // koristio SERVERSKU (UTC) satnicu umjesto stvarnog bosanskog vremena,
+    // pa bi "aktivno 11:00-15:00" postajalo vidljivo 1-2h kasnije nego sto
+    // restoran/gost stvarno vidi na satu. activeFromTime/activeToTime se
+    // namjerno citaju preko getUTC*() (vidi parseTime ispod - "UTC" polje
+    // tu sluzi samo kao neutralan kontejner za "HH:MM" bez vremenske zone,
+    // ne kao stvarna UTC vrijednost), a "sada" se racuna u pravoj bosanskoj
+    // zoni preko Intl API-ja.
+    const nowMinutes = this.currentMinutesInSarajevo();
 
     const visibleCategories = categories.filter((cat) => {
       if (!cat.activeFromTime || !cat.activeToTime) return true;
-      const from = cat.activeFromTime.getHours() * 60 + cat.activeFromTime.getMinutes();
-      const to = cat.activeToTime.getHours() * 60 + cat.activeToTime.getMinutes();
+      const from = cat.activeFromTime.getUTCHours() * 60 + cat.activeFromTime.getUTCMinutes();
+      const to = cat.activeToTime.getUTCHours() * 60 + cat.activeToTime.getUTCMinutes();
       return nowMinutes >= from && nowMinutes <= to;
     });
 
@@ -154,6 +162,20 @@ export class MenuService {
   }
 
   // --- Interno ---
+
+  /** Trenutno vrijeme (minuta od ponoci) u bosanskoj vremenskoj zoni, bez obzira na TZ servera (vidi getPublicMenu). */
+  private currentMinutesInSarajevo(): number {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Sarajevo',
+      hour: 'numeric',
+      minute: 'numeric',
+      hourCycle: 'h23',
+    }).formatToParts(new Date());
+    const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+    const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+    return hour * 60 + minute;
+  }
+
   private parseTime(value?: string): Date | undefined {
     if (!value) return undefined;
     const [h, m] = value.split(':').map(Number);
