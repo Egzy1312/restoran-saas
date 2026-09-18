@@ -2,13 +2,19 @@ import { createHmac } from 'crypto';
 import { BillingService } from './billing.service';
 
 describe('BillingService', () => {
-  let prisma: { restaurant: { update: jest.Mock } };
+  let prisma: { restaurant: { update: jest.Mock; findUnique: jest.Mock }; platformAuditLog: { create: jest.Mock } };
   let config: { get: jest.Mock };
   let service: BillingService;
   const webhookSecret = 'test-webhook-secret';
 
   beforeEach(() => {
-    prisma = { restaurant: { update: jest.fn() } };
+    prisma = {
+      restaurant: {
+        update: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({ id: 'rest-1', name: 'Konoba', isActive: true }),
+      },
+      platformAuditLog: { create: jest.fn() },
+    };
     config = {
       get: jest.fn((key: string) => {
         const values: Record<string, string> = {
@@ -92,6 +98,81 @@ describe('BillingService', () => {
       });
 
       expect(prisma.restaurant.update).not.toHaveBeenCalled();
+    });
+
+    it('preskace ako restoran vise ne postoji u bazi (npr. obrisan)', async () => {
+      prisma.restaurant.findUnique.mockResolvedValue(null);
+
+      await service.handleWebhookEvent({
+        meta: { event_name: 'subscription_updated', custom_data: { restaurant_id: 'obrisan-restoran' } },
+        data: { id: 'ls-sub-1', attributes: { status: 'active', renews_at: null, customer_id: 1 } },
+      });
+
+      expect(prisma.restaurant.update).not.toHaveBeenCalled();
+    });
+
+    describe('automatska suspenzija kad pretplata otkaze/istekne', () => {
+      it('suspenduje (isActive: false) aktivan restoran kad status postane "cancelled"', async () => {
+        prisma.restaurant.findUnique.mockResolvedValue({ id: 'rest-1', name: 'Konoba', isActive: true });
+
+        await service.handleWebhookEvent({
+          meta: { event_name: 'subscription_cancelled', custom_data: { restaurant_id: 'rest-1' } },
+          data: { id: 'ls-sub-1', attributes: { status: 'cancelled', renews_at: null, customer_id: 1 } },
+        });
+
+        expect(prisma.restaurant.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ isActive: false }) }),
+        );
+        expect(prisma.platformAuditLog.create).toHaveBeenCalledWith({
+          data: {
+            actorId: 'system',
+            actorEmail: 'billing-webhook@system',
+            action: 'suspend_restaurant_auto',
+            targetRestaurantId: 'rest-1',
+            targetRestaurantName: 'Konoba',
+          },
+        });
+      });
+
+      it('suspenduje i na "past_due" (neuspjela naplata), ne samo puno otkazivanje', async () => {
+        prisma.restaurant.findUnique.mockResolvedValue({ id: 'rest-1', name: 'Konoba', isActive: true });
+
+        await service.handleWebhookEvent({
+          meta: { event_name: 'subscription_payment_failed', custom_data: { restaurant_id: 'rest-1' } },
+          data: { id: 'ls-sub-1', attributes: { status: 'past_due', renews_at: null, customer_id: 1 } },
+        });
+
+        expect(prisma.restaurant.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ isActive: false }) }),
+        );
+      });
+
+      it('NE dira isActive (niti pise audit log) ako je restoran VEC suspendovan - izbjegava spam duplih zapisa', async () => {
+        prisma.restaurant.findUnique.mockResolvedValue({ id: 'rest-1', name: 'Konoba', isActive: false });
+
+        await service.handleWebhookEvent({
+          meta: { event_name: 'subscription_updated', custom_data: { restaurant_id: 'rest-1' } },
+          data: { id: 'ls-sub-1', attributes: { status: 'past_due', renews_at: null, customer_id: 1 } },
+        });
+
+        expect(prisma.restaurant.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.not.objectContaining({ isActive: expect.anything() }) }),
+        );
+        expect(prisma.platformAuditLog.create).not.toHaveBeenCalled();
+      });
+
+      it('NE reaktivira automatski kad placanje uspije ponovo - reaktivacija ostaje svjesna SUPER_ADMIN akcija (moze biti suspendovan iz drugog razloga)', async () => {
+        prisma.restaurant.findUnique.mockResolvedValue({ id: 'rest-1', name: 'Konoba', isActive: false });
+
+        await service.handleWebhookEvent({
+          meta: { event_name: 'subscription_updated', custom_data: { restaurant_id: 'rest-1' } },
+          data: { id: 'ls-sub-1', attributes: { status: 'active', renews_at: null, customer_id: 1 } },
+        });
+
+        expect(prisma.restaurant.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.not.objectContaining({ isActive: expect.anything() }) }),
+        );
+      });
     });
   });
 

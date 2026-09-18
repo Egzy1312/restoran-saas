@@ -123,6 +123,22 @@ export class BillingService {
     }
 
     const status = STATUS_MAP[event.data.attributes.status] ?? 'active';
+    // Neplaceno/otkazano ODMAH suspenduje nalog (vidi platform-admin.service.ts
+    // suspend/activate - isti isActive flag) - bez ovoga bi restoran mogao
+    // koristiti platformu besplatno zauvijek nakon neuspjele naplate, dok
+    // neko rucno ne primijeti i ne suspenduje ga u Platform panelu.
+    // NAMJERNO jednosmjerno - ne reaktivira automatski kad se placanje
+    // oporavi (status ponovo postane 'active'), jer bi to moglo tiho
+    // ponistiti RUCNU suspenziju iz sasvim drugog razloga (npr. zloupotreba)
+    // ako restoran slucajno i dalje ima vazecu pretplatu. Reaktivacija
+    // ostaje svjesna SUPER_ADMIN akcija.
+    const shouldSuspend = status === 'past_due' || status === 'cancelled';
+
+    const restaurant = await this.prisma.restaurant.findUnique({ where: { id: restaurantId } });
+    if (!restaurant) {
+      this.logger.warn(`Lemon Squeezy webhook (${event.meta.event_name}) za nepostojeci restoran ${restaurantId} - preskačem.`);
+      return;
+    }
 
     await this.prisma.restaurant.update({
       where: { id: restaurantId },
@@ -131,7 +147,21 @@ export class BillingService {
         subscriptionRenewsAt: event.data.attributes.renews_at ? new Date(event.data.attributes.renews_at) : null,
         lemonSqueezyCustomerId: String(event.data.attributes.customer_id),
         lemonSqueezySubscriptionId: event.data.id,
+        ...(shouldSuspend && restaurant.isActive ? { isActive: false } : {}),
       },
     });
+
+    if (shouldSuspend && restaurant.isActive) {
+      this.logger.warn(`Restoran ${restaurantId} automatski suspendovan (pretplata: ${status}).`);
+      await this.prisma.platformAuditLog.create({
+        data: {
+          actorId: 'system',
+          actorEmail: 'billing-webhook@system',
+          action: 'suspend_restaurant_auto',
+          targetRestaurantId: restaurant.id,
+          targetRestaurantName: restaurant.name,
+        },
+      });
+    }
   }
 }
